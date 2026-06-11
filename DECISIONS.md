@@ -128,6 +128,22 @@ and fired the hand-off despite review never passing), proving the test actually
 catches the bug class rather than passing vacuously; then restored my fix via
 `git checkout`. (3) All four gates green: test 6/6, typecheck, lint, build.
 
+### 9 — Pre-submission review, merge to main (2026-06-11)
+**What:** Before submitting I did a final sweep against the README's submission
+checklist: re-ran all four gates (test 6/6, typecheck, lint, build — all green),
+re-diffed the two protected files against the initial commit and the original
+challenge folder (byte-identical), confirmed the only code change in the whole
+history is `src/lib/pipeline.ts`, and checked the repo is public, on the official
+template, with `main` as the default branch. Then merged `fix/pipeline-bugs` into
+`main` via pull request and watched the `grade` Action on `main` until it went
+green.
+
+**Why:** The push to `main` is the application — the grader runs there, not on
+the branch. Verifying everything locally first means `main`'s `grade` run is
+green on the first try, and checking the constraints one last time (rather than
+trusting that earlier checks still hold) closes out the integrity story: every
+claim in this log is backed by a command I actually ran.
+
 ---
 
 ## Per-bug decisions
