@@ -1,0 +1,52 @@
+1. Ran /init
+
+Immediately ran /init in a fresh claude window with model Opus 4.8 
+and effort level set to X-high to scan the project folder and create a 
+CLAUDE.md file with codebase documentation.
+
+2. Created a DECISIONS.md file 
+
+The file's purpose is to document my decisions and evidence trail.
+Essentially answers the submission note "what you decided, where the model was wrong"
+
+3. Claude Incorrect suggestion:
+
+Claude made the claim that, although in a new session, the CLAUDE.md file gets loaded at the very 
+start of the session (which is good. It means that I wont have to keep reminding claude to keep updating 
+DECISIONS.md documenting my decisions). However,Claude claimed that since Claude relies on reading this 
+instruction and following it throughout a conversation, if a conversation window were to get large enough, it could drift and essentially forget the rules that
+CLAUDE.md put in place. Claude suggested that to combat this, that I creagte a SessionStart hook to .claude/settings.json,
+which would inject a "keep DECISIONS.md updated" reminder at the start of every session, even stating that now 
+"it can't be missed even in long or compacted sessions." This doesnt solve the problem at all. The only thing this achieves, 
+is putting the text into context at the session start (exactly what the CLAUDE.md file achieves)
+
+My solution:
+
+Rather than blindly trusting Claude's solution, I will instead run /compact whenever a window becomes above 60% 
+context usage, in order to prevent 'context rot'. Now every time /compact is run, it will summarise the most important parts
+of the conversation, then the context is rebuilt as: system prompt + CLAUDE.md (re-read from disk) + the summary, so claude.md 
+is never forgotten.
+
+
+4. Ran /status-line to show current context window, and making sure to run /compact whenever 
+the context window goes above 60%.
+
+5. Added rule in claude.md so that rather than just going ahead and fixing all the issues, it:
+- States root cause, change needed to be made, and why.
+- Waits for my approval.
+- Relates only to code edits, not reading files or running read only commands.
+
+6. Imposed /systematic-debugging skill, which is ideal to use when encountering any bug, 
+test failure, or unexpected behavior, before proposing fixes. 
+
+7. Bug 1:
+
+Discovered that the error was in /src/lib/pipeline.ts in the generate() function, 3 separate issues:
+- No await keyword used - advanceToNextStage() is async, so calling it returns a promise. Without the 'await' keyword,
+the function does not pause to find out the outcome. 
+- .catch(() => {}) swallows the failure - Usually, if a promise is rejected, Node raises an 'unhandled rejection' warning,
+so the user would see something in logs. This empty catch handler gets the rejection and does nothing with it. The failure is
+now invisible, no logs.
+- return { status: "ok" } runs immediately - Since nothing waited, this line executes before the handoff succeeds or fails.
+'ok' is returned by default. 
+
