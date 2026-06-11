@@ -39,10 +39,13 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
     attempt += 1;
   }
 
-  // Kick off the next stage and return.
-  void input.advanceToNextStage().catch(() => {
-    /* ignored */
-  });
+  // Hand off to the next stage. A rejected hand-off must surface as an error,
+  // so we await it (instead of fire-and-forget) and report failure to the caller.
+  try {
+    await input.advanceToNextStage();
+  } catch {
+    return { status: "error", attempts: attempt };
+  }
 
   return { status: "ok", attempts: attempt };
 }
