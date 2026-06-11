@@ -104,6 +104,30 @@ bound and silently reported a never-passing draft as success — the fix uses th
 exported `MAX_REVISIONS` and adds the missing error path. With all four green and
 the gate clean, "all bugs solved" is now a provable claim, not an assertion.
 
+### 8 — Added the bonus edge-case test: hand-off side effects (2026-06-11)
+**What:** With all three bugs fixed, I took up the README's bonus ("add one test
+of your own that covers an edge case"). I asked the AI which untested edge case
+mattered most; we settled on **side-effect safety**: every gate test asserts only
+on `generate()`'s return value, so nothing proves a failed run doesn't still hand
+the draft off downstream. Added `src/__tests__/handoff-side-effects.test.ts`
+(a separate file — the gate test file is protected) asserting that
+`advanceToNextStage` is never called when review never passes, and is called
+exactly once on a successful run.
+
+**Why this edge case:** It's the only untested *category* (side effects vs.
+return values), and it's the highest-stakes failure mode — in the real pipeline,
+handing off an unreviewed draft means broken content ships, not just a wrong
+status code. A refactor that fired the hand-off before the review check would
+pass all four gate tests while leaking unreviewed drafts; this test pins that
+contract down.
+
+**Verified by:** Three checks. (1) Full suite on my fixed code: 6/6 pass.
+(2) Mutation check — I temporarily copied the *original broken* `pipeline.ts`
+over my fix and ran just the new file: it fails (the old code returned `"ok"`
+and fired the hand-off despite review never passing), proving the test actually
+catches the bug class rather than passing vacuously; then restored my fix via
+`git checkout`. (3) All four gates green: test 6/6, typecheck, lint, build.
+
 ---
 
 ## Per-bug decisions

@@ -1,52 +1,128 @@
 1. Ran /init
 
-Immediately ran /init in a fresh claude window with model Opus 4.8 
-and effort level set to X-high to scan the project folder and create a 
+Immediately ran /init in a fresh claude window with model Opus 4.8
+and effort level set to X-high to scan the project folder and create a
 CLAUDE.md file with codebase documentation.
 
-2. Created a DECISIONS.md file 
+2. Created a DECISIONS.md file
 
 The file's purpose is to document my decisions and evidence trail.
-Essentially answers the submission note "what you decided, where the model was wrong"
+Essentially answers the submission note "what you decided, where the model was wrong".
 
-3. Claude Incorrect suggestion:
+3. Claude's incorrect suggestion:
 
-Claude made the claim that, although in a new session, the CLAUDE.md file gets loaded at the very 
-start of the session (which is good. It means that I wont have to keep reminding claude to keep updating 
-DECISIONS.md documenting my decisions). However,Claude claimed that since Claude relies on reading this 
-instruction and following it throughout a conversation, if a conversation window were to get large enough, it could drift and essentially forget the rules that
-CLAUDE.md put in place. Claude suggested that to combat this, that I creagte a SessionStart hook to .claude/settings.json,
-which would inject a "keep DECISIONS.md updated" reminder at the start of every session, even stating that now 
-"it can't be missed even in long or compacted sessions." This doesnt solve the problem at all. The only thing this achieves, 
-is putting the text into context at the session start (exactly what the CLAUDE.md file achieves)
+Claude made the claim that, although in a new session, the CLAUDE.md file gets loaded at the very
+start of the session (which is good. It means that I won't have to keep reminding claude to keep updating
+DECISIONS.md documenting my decisions). However, Claude claimed that since Claude relies on reading this
+instruction and following it throughout a conversation, if a conversation window were to get large enough,
+it could drift and essentially forget the rules that CLAUDE.md put in place. Claude suggested that to combat
+this, I create a SessionStart hook in .claude/settings.json, which would inject a "keep DECISIONS.md updated"
+reminder at the start of every session, even stating that now "it can't be missed even in long or compacted
+sessions." This doesn't solve the problem at all. The only thing this achieves is putting the text into
+context at the session start (exactly what the CLAUDE.md file already achieves).
 
 My solution:
 
-Rather than blindly trusting Claude's solution, I will instead run /compact whenever a window becomes above 60% 
-context usage, in order to prevent 'context rot'. Now every time /compact is run, it will summarise the most important parts
-of the conversation, then the context is rebuilt as: system prompt + CLAUDE.md (re-read from disk) + the summary, so claude.md 
-is never forgotten.
+Rather than blindly trusting Claude's solution, I will instead run /compact whenever a window goes above 60%
+context usage, in order to prevent 'context rot'. Every time /compact is run, it summarises the most important
+parts of the conversation, then the context is rebuilt as: system prompt + CLAUDE.md (re-read from disk) + the
+summary, so CLAUDE.md is never forgotten.
 
-
-4. Ran /status-line to show current context window, and making sure to run /compact whenever 
+4. Ran /status-line to show the current context window, making sure to run /compact whenever
 the context window goes above 60%.
 
-5. Added rule in claude.md so that rather than just going ahead and fixing all the issues, it:
-- States root cause, change needed to be made, and why.
+5. Added a rule in CLAUDE.md so that rather than just going ahead and fixing all the issues, Claude:
+- States the root cause, the change that needs to be made, and why.
 - Waits for my approval.
-- Relates only to code edits, not reading files or running read only commands.
+- This relates only to code edits, not reading files or running read-only commands.
 
-6. Imposed /systematic-debugging skill, which is ideal to use when encountering any bug, 
-test failure, or unexpected behavior, before proposing fixes. 
+6. Imposed the /systematic-debugging skill, which is ideal to use when encountering any bug,
+test failure, or unexpected behavior, before proposing fixes.
 
-7. Bug 1:
+7. Created a branch fix/pipeline-bugs. Will work on this branch when working on the bugs.
+
+8. Bug 1:
 
 Discovered that the error was in /src/lib/pipeline.ts in the generate() function, 3 separate issues:
-- No await keyword used - advanceToNextStage() is async, so calling it returns a promise. Without the 'await' keyword,
-the function does not pause to find out the outcome. 
-- .catch(() => {}) swallows the failure - Usually, if a promise is rejected, Node raises an 'unhandled rejection' warning,
-so the user would see something in logs. This empty catch handler gets the rejection and does nothing with it. The failure is
-now invisible, no logs.
-- return { status: "ok" } runs immediately - Since nothing waited, this line executes before the handoff succeeds or fails.
-'ok' is returned by default. 
+- No await keyword used - advanceToNextStage() is async, so calling it returns a promise. Without the 'await'
+keyword, the function does not pause to find out the outcome.
+- .catch(() => {}) swallows the failure - Usually, if a promise is rejected, Node raises an 'unhandled rejection'
+warning, so the user would see something in logs. This empty catch handler gets the rejection and does nothing
+with it. The failure is now invisible, no logs.
+- return { status: "ok" } runs immediately - Since nothing waited, this line executes before the handoff succeeds
+or fails. 'ok' is returned by default.
 
+How I verified the bug was fixed:
+- Immediately after the fix, I ran npx vitest run -t "failed hand-off" which passed.
+
+9. Bug 2:
+
+Discovered that the error was in /src/lib/pipeline.ts lines 31-34, where the code asks the model for a draft
+exactly once and assumes it worked. There are 2 main issues here:
+- The model's reply can get cut off halfway through the response, so the closing ``` never arrives. extractJson
+can only work if the opening and closing markers are both there, so on a cut-off reply it throws 'No fenced JSON
+block found'.
+- Nothing catches that error. There is no try/catch around these lines, so the error travels all the way up and
+crashes the entire run. One brief connection drop crashes the whole request, when it should just ask the model
+to try again.
+
+Fix:
+- Wrap the model call in a retry loop (maximum of 3 attempts). If all 3 attempts fail, return "error" instead of
+looping forever.
+- The retry works because the same state object is passed in each time. If a fresh state were passed in each
+attempt, the counter would reset and the mock would never move past the failure.
+
+How I verified the bug was fixed:
+- npx vitest run -t "truncated stream" passed immediately after the fix. The full npm test jumped 1 -> 3 of 4
+(this one change fixed Bug 2 AND Bug 3a). typecheck / lint / build all stayed green.
+
+10. Bug 3a:
+
+Transient 429s - This was already fixed by the Bug 2 retry loop. A 429 error happens when you call a real API
+too many times too quickly. This error is caught in the same try/catch block as the truncated output from the LLM.
+
+How I verified the bug was fixed:
+- Verified with npx vitest run -t "rate-limit" -> passed. No separate code change — the Bug 2 retry loop covered it.
+
+11. Bug 3b:
+
+This bug occurs at pipeline.ts:52-56. There are two main problems with it:
+- 50 is the wrong number - the repo already defines the official limit MAX_REVISIONS = 3. The loop just ignores it
+and makes up the value of 50.
+- The loop ends, then nothing asks why it ended - The loop ends because either input.reviewPasses(attempt) is false,
+or attempt goes above the max attempts. The code never checks which. Regardless of what happens, execution falls
+straight through to the hand-off and return { status: "ok" }. This is the same problem as the first bug, a failure
+disguised as an ok.
+
+How I verified the bug was fixed:
+- npx vitest run -t "never passes" now passes.
+- npm test -> 4/4, typecheck / lint / build all green.
+
+12. Integrity / respecting the hard constraints
+
+I treated the grader's hard constraints as guardrails and verified I respected them:
+- I never edited the protected files. Proof:
+-- git diff a51d1fd HEAD -- src/__tests__/pipeline.test.ts .github/workflows/grade.yml returns nothing — both are
+byte-identical to the initial commit.
+- git diff --stat a51d1fd HEAD shows the only code file I changed is src/lib/pipeline.ts (everything else is docs).
+
+13. Bonus test:
+
+The README says: "add one test of your own that covers an edge case you think matters. We notice this."
+
+Instead of letting the AI write whatever test it wanted, I opened a new context windowasked it what the most important missing edge case was.
+The answer: all 4 existing tests only check what generate() RETURNS (status and attempts). None of them check what
+it actually DOES — specifically, whether advanceToNextStage gets called or not. That means a bug where a failed
+draft still gets handed off to the next stage would slip straight past every test. In the real pipeline that would
+mean unreviewed content getting shipped, which is much worse than just a wrong status code.
+
+My test (in a new file, src/__tests__/handoff-side-effects.test.ts, since the original test file is protected):
+- If review never passes, advanceToNextStage must be called 0 times.
+- If the run succeeds, it must be called exactly once (not zero times, not twice).
+
+How I verified the test itself actually works:
+- I temporarily swapped the original broken pipeline.ts back in and ran my new test -> it FAILED. That proves the
+test genuinely catches the bug (a test that can never fail proves nothing). Then I restored my fixed version with
+git checkout.
+- npm test -> 6/6, typecheck / lint / build all green.
+- Double-checked the two protected files are still byte-identical to the originals.
