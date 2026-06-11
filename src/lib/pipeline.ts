@@ -49,10 +49,17 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
     return { status: "error", attempts: 0 };
   }
 
-  // Revise until the draft passes review.
+  // Revise until the draft passes review, but no more than MAX_REVISIONS times.
+  // If it still hasn't passed after that, give up and report an error rather than
+  // handing off (or spinning on) a draft that never met the bar.
   let attempt = 0;
-  while (!input.reviewPasses(attempt) && attempt < 50) {
+  let passed = input.reviewPasses(attempt);
+  while (!passed && attempt < MAX_REVISIONS) {
     attempt += 1;
+    passed = input.reviewPasses(attempt);
+  }
+  if (!passed) {
+    return { status: "error", attempts: attempt };
   }
 
   // Hand off to the next stage. A rejected hand-off must surface as an error,

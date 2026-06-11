@@ -93,6 +93,17 @@ model-call failure whose only recovery is to call again — so one retry mechani
 fixes both Bug 2 and Bug 3a. I checked Bug 2 alone first, then the full suite, to
 confirm 3a flipped green as expected and nothing regressed.
 
+### 7 — Bounded the revision loop (Bug 3b); full suite green (2026-06-11)
+**What:** Replaced the `attempt < 50` loop that always returned `ok` with one
+bounded by `MAX_REVISIONS` that returns `status: "error"` when review never passes.
+Verified Bug 3b in isolation (`-t "never passes"`), then the full suite: **4/4**
+passing, with typecheck/lint/build all green.
+
+**Why:** This was the last failing test. The old loop both spun past the contract's
+bound and silently reported a never-passing draft as success — the fix uses the
+exported `MAX_REVISIONS` and adds the missing error path. With all four green and
+the gate clean, "all bugs solved" is now a provable claim, not an assertion.
+
 ---
 
 ## Per-bug decisions
@@ -135,8 +146,24 @@ confirm 3a flipped green as expected and nothing regressed.
   now 3/4 (only Bug 3b left); typecheck/lint/build clean.
 
 ### Bug 3: Transient 429s kill the run / revision loop can spin
-- Symptom:
-- Root cause:
-- Fix and why this approach:
-- AI's contribution / where it was wrong:
-- Verified by:
+- Symptom: Two failures. (3a) `transient-429-twice` threw `Rate limited (429)` out
+  of the run — one 429 took everything down. (3b) with `reviewPasses` always false,
+  the loop ran to `attempt < 50` and returned `status: "ok"` with `attempts: 50`,
+  instead of giving up with an error.
+- Root cause: (3a) same single-call problem as Bug 2 — `mockStream` was called once
+  with no retry, so the first thrown 429 propagated out. (3b) the revision loop used
+  the wrong bound (`< 50` instead of the contract's `MAX_REVISIONS = 3`) and had no
+  failure path — when review never passed it fell through to the hand-off and
+  returned `ok`.
+- Fix and why this approach: (3a) no separate change — the bounded retry from Bug 2
+  catches the thrown 429 the same way it catches truncation and re-calls with the
+  same `state`; the third call succeeds. (3b) bounded the loop with `MAX_REVISIONS`
+  and added `if (!passed) return { status: "error" }`, so an unmet bar surfaces as
+  an error instead of a false `ok`. Tracked a `passed` boolean so `reviewPasses` is
+  evaluated once per attempt (it's a scripted, possibly side-effecting callback).
+- AI's contribution / where it was wrong: AI proposed both. For 3b its minimal
+  suggestion was to re-call `reviewPasses(attempt)` after the loop; I used a tracked
+  boolean instead to avoid evaluating the callback twice at the same index. (As with
+  Bug 2, I also kept the stream-retry cap separate from `MAX_REVISIONS`.)
+- Verified by: `npx vitest run -t "rate-limit"` (3a) and `-t "never passes"` (3b)
+  both pass; full `npm test` now 4/4; typecheck/lint/build green.
