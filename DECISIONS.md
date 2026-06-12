@@ -144,6 +144,27 @@ green on the first try, and checking the constraints one last time (rather than
 trusting that earlier checks still hold) closes out the integrity story: every
 claim in this log is backed by a command I actually ran.
 
+### 10 — Post-submission audit: independent review of the final diff (2026-06-12)
+**What:** Asked a fresh max-effort Claude session to review everything I changed
+(initial commit → HEAD) with adversarial eyes: nine independent review angles over
+the code diff, a fact-check of my docs against the official Claude Code
+documentation, and a final gap sweep — then re-ran all four gates (tests 6/6,
+typecheck, lint, build: green; protected files still byte-identical to `a51d1fd`).
+
+**Outcome:** The three fixes hold up — no correctness bugs, nothing gamed. The
+audit surfaced improvables I've logged for follow-up rather than hot-fixing:
+(1) my bonus test never asserts `attempts`, so no test in the suite pins that
+revisions actually happen before giving up (a no-revision refactor would pass
+6/6); (2) its test name collides with the gate test under `-t "never passes"`
+(that filter now matches 2 tests), so the "verified in isolation" command I
+logged for Bug 3b no longer isolates at HEAD; (3) the retry's bare `catch {}`
+treats every error as transient — the mock's exported `TransientError` is never
+consulted — and nothing documents that `MAX_STREAM_ATTEMPTS = 3` is exactly the
+mock's worst case; (4) `CLAUDE.md` still describes the bugs in the present tense
+("the current loop uses `< 50`"), which is stale now that they're fixed. Per the
+explain-before-editing norm, no code changed in this session — these are queued
+for my decision.
+
 ---
 
 ## Per-bug decisions

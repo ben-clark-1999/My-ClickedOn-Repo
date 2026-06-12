@@ -115,9 +115,9 @@ How I verified the bug was fixed:
 This bug occurs at pipeline.ts:52-56. There are two main problems with it:
 - 50 is the wrong number — the repo already defines the official limit MAX_REVISIONS = 3. The
   loop just ignores it and makes up the value of 50.
-- The loop ends, then nothing asks why it ended — the loop ends because either
-  input.reviewPasses(attempt) is false, or attempt goes above the max attempts. The code never
-  checks which. Regardless of what happens, execution falls straight through to the hand-off and
+- The loop can end for two different reasons: review finally passed (success), 
+  or we ran out of attempts (failure). The code never checks which one happened.
+  Regardless of what happens, execution falls straight through to the hand-off and
   return { status: "ok" }. This is the same problem as the first bug, a failure disguised as
   an ok.
 
